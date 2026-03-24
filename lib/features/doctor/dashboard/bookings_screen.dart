@@ -56,6 +56,13 @@ class _BookingsScreenState extends State<BookingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final doctorId = _auth.currentUser?.uid;
+    if (doctorId == null) {
+      return const Scaffold(
+        body: Center(child: Text('يرجى تسجيل الدخول لعرض الحجوزات')),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('الحجوزات الجديدة'),
@@ -63,7 +70,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
       body: StreamBuilder<QuerySnapshot>(
         stream: _firestore
             .collection('appointments')
-            .where('doctorId', isEqualTo: _auth.currentUser?.uid)
+            .where('doctorId', isEqualTo: doctorId)
             .where('status', isEqualTo: 'pending')
             .snapshots(),
         builder: (context, snapshot) {
@@ -87,83 +94,84 @@ class _BookingsScreenState extends State<BookingsScreen> {
           }
 
           return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: bookings.length,
-          itemBuilder: (context, index) {
-            final item = bookings[index];
-            final data = item.data() as Map<String, dynamic>;
-            data['id'] = item.id;
-            final patientName = data['userName'] ?? 'مريض';
-            final reason = data['reason'] ?? 'سبب غير معروف';
-            final time = data['date'] != null
-                ? DateFormat('dd MMM yyyy, hh:mm a', 'ar')
-                .format((data['date'] as Timestamp).toDate())
-                : 'بدون وقت';
+            padding: const EdgeInsets.all(16),
+            itemCount: bookings.length,
+            itemBuilder: (context, index) {
+              final item = bookings[index];
+              final data = item.data() as Map<String, dynamic>;
+              data['id'] = item.id;
+              final patientName = data['userName'] ?? 'مريض';
+              final reason = data['reason'] ?? 'سبب غير معروف';
+              final time = data['date'] != null
+                  ? DateFormat('dd MMM yyyy, hh:mm a', 'ar')
+                      .format((data['date'] as Timestamp).toDate())
+                  : 'بدون وقت';
 
-            return Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundImage: data['userImageUrl'] != null
-                      ? NetworkImage(data['userImageUrl'])
-                      : null,
-                  child: data['userImageUrl'] == null ? const Icon(Icons.person) : null,
-                ),
-                title: Text(patientName),
-                subtitle: Text('$time - $reason'),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.check, color: MedicalTheme.successGreen),
-                      onPressed: () => _updateBookingStatus(data['id'], 'attended'),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: MedicalTheme.dangerRed),
-                      onPressed: () => _updateBookingStatus(data['id'], 'cancelled'),
-                    ),
-                  ],
-                ),
-                onTap: () {
-                  try {
-                    final appointment = Appointment(
-                      id: data['id'] ?? '',
-                      userId: data['userId'] ?? '',
-                      userName: data['userName'] ?? 'مريض',
-                      userImageUrl: data['userImageUrl'],
-                      userPhone: data['userPhone'],
-                      doctorId: data['doctorId'] ?? '',
-                      doctorName: data['doctorName'] ?? 'طبيب',
-                      doctorImageUrl: data['doctorImageUrl'],
-                      doctorPhone: data['doctorPhone'],
-                      specialtyName: data['specialtyName'] ?? '',
-                      date: data['date'] ?? Timestamp.now(),
-                      time: data['time'] ?? '',
-                      workplace: data['workplace'] ?? '',
-                      payment: data['payment'] ?? '',
-                      status: data['status'] ?? 'pending',
-                      createdAt: data['createdAt'] ?? Timestamp.now(),
-                    );
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => AppointmentDetailsScreen(
-                            appointment: appointment),
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundImage: data['userImageUrl'] != null
+                        ? NetworkImage(data['userImageUrl'])
+                        : null,
+                    child: data['userImageUrl'] == null ? const Icon(Icons.person) : null,
+                  ),
+                  title: Text(patientName),
+                  subtitle: Text('$time - $reason'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.check, color: MedicalTheme.successGreen),
+                        onPressed: () => _updateBookingStatus(data['id'], 'attended'),
                       ),
-                    );
-                  } catch (e) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('خطأ في عرض تفاصيل الحجز: $e'),
-                        backgroundColor: AppTheme.alertRed,
+                      IconButton(
+                        icon: const Icon(Icons.close, color: MedicalTheme.dangerRed),
+                        onPressed: () => _updateBookingStatus(data['id'], 'cancelled'),
                       ),
-                    );
-                  }
-                },
-              ),
-            );
-          },
-        );
+                    ],
+                  ),
+                  onTap: () {
+                    try {
+                      final appointment = Appointment(
+                        id: data['id'] ?? '',
+                        userId: data['userId'] ?? '',
+                        userName: data['userName'] ?? 'مريض',
+                        userImageUrl: data['userImageUrl'],
+                        userPhone: data['userPhone'],
+                        doctorId: data['doctorId'] ?? '',
+                        doctorName: data['doctorName'] ?? 'طبيب',
+                        doctorImageUrl: data['doctorImageUrl'],
+                        doctorPhone: data['doctorPhone'],
+                        specialtyName: data['specialtyName'] ?? '',
+                        date: data['date'] ?? Timestamp.now(),
+                        time: data['time'] ?? '',
+                        workplace: data['workplace'] ?? '',
+                        payment: data['payment'] ?? '',
+                        status: data['status'] ?? 'pending',
+                        createdAt: data['createdAt'] ?? Timestamp.now(),
+                      );
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => AppointmentDetailsScreen(
+                            appointment: appointment,
+                          ),
+                        ),
+                      );
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('خطأ في عرض تفاصيل الحجز: $e'),
+                          backgroundColor: AppTheme.alertRed,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              );
+            },
+          );
         },
       ),
     );

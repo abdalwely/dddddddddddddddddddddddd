@@ -78,7 +78,6 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
   final AudioRecorder _audioRecorder = AudioRecorder();
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isRecording = false;
-  String? _recordingPath;
   String? _playingMessageId;
   Duration _audioDuration = Duration.zero;
   Duration _audioPosition = Duration.zero;
@@ -495,7 +494,6 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
         if (mounted) {
           setState(() {
             _isRecording = true;
-            _recordingPath = path;
           });
         }
       } else {
