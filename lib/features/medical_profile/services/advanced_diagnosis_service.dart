@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:digl/features/medical_profile/models/health_profile_model.dart';
+import 'package:digl/features/medical_profile/models/doctor_recommendation_model.dart';
 
 /// 🏥 خدمة التشخيص الذكية والتوصيات الطبية المتقدمة
 /// تقوم بتحليل بيانات المريض واقتراح الأدوية والأطباء المناسبين
@@ -168,6 +169,11 @@ class AdvancedDiagnosisService {
         matchedSymptoms,
         severity,
       );
+      final probableCondition = _inferPrimaryCondition(matchedSymptoms);
+      final recommendedDoctors = await _recommendDoctors(
+        specialties: recommendedSpecialties,
+        severity: severity,
+      );
 
       // 5️⃣ الإجراءات الفورية
       final immediateActions = _getImmediateActions(
@@ -183,11 +189,13 @@ class AdvancedDiagnosisService {
         recommendedMedicines: recommendedMedicines,
         recommendedSpecialties: recommendedSpecialties,
         immediateActions: immediateActions,
+        recommendedDoctors: recommendedDoctors,
         analysisDate: DateTime.now(),
         detailedAnalysis: _buildDetailedAnalysis(
           profile,
           matchedSymptoms,
           severity,
+          probableCondition,
         ),
       );
 
@@ -223,8 +231,10 @@ class AdvancedDiagnosisService {
 
   /// ✅ تحليل الأعراض وتقسيمها إلى كلمات مفتاحية
   static List<String> _parseSymptoms(String symptomsText) {
-    // تقسيم النص إلى كلمات
-    final words = symptomsText.toLowerCase().split(RegExp(r'[\s،]+'));
+    final normalized = symptomsText
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^\p{L}\p{N}\s]', unicode: true), ' ');
+    final words = normalized.split(RegExp(r'[\s،]+'));
 
     // إزالة الكلمات الفارغة والقصيرة جداً
     return words
@@ -275,7 +285,24 @@ class AdvancedDiagnosisService {
     // ترتيب الأدوية بناءً على نسبة التطابق
     recommendations.sort((a, b) => b.matchPercentage.compareTo(a.matchPercentage));
 
-    return recommendations.take(3).toList(); // إرجاع أفضل 3 أدوية
+    if (recommendations.isEmpty) {
+      return medicinesDatabase
+          .take(2)
+          .map(
+            (medicine) => MedicineRecommendation(
+              name: medicine['name'] as String,
+              activeIngredient: medicine['activeIngredient'] as String,
+              dose: medicine['dose'] as String,
+              category: medicine['category'] as String,
+              sideEffects: (medicine['sideEffects'] as List<dynamic>).cast<String>(),
+              warnings: (medicine['warnings'] as List<dynamic>).cast<String>(),
+              matchPercentage: 35,
+            ),
+          )
+          .toList();
+    }
+
+    return recommendations.take(3).toList();
   }
 
   /// ✅ اقتراح التخصصات الطبية
@@ -311,7 +338,78 @@ class AdvancedDiagnosisService {
 
     recommendations.sort((a, b) => b.matchPercentage.compareTo(a.matchPercentage));
 
-    return recommendations.take(2).toList(); // إرجاع أفضل تخصصين
+    if (recommendations.isEmpty) {
+      return [
+        SpecialtyRecommendation(
+          name: 'طب عام',
+          description: 'تقييم أولي للحالة وتوجيه للتخصص المناسب',
+          matchPercentage: 50,
+        ),
+      ];
+    }
+
+    return recommendations.take(2).toList();
+  }
+
+  static String _inferPrimaryCondition(List<String> symptoms) {
+    if (symptoms.any((s) => s.contains('سعال') || s.contains('زكام') || s.contains('التهاب'))) {
+      return 'عدوى تنفسية علوية';
+    }
+    if (symptoms.any((s) => s.contains('حكة') || s.contains('طفح') || s.contains('جلد'))) {
+      return 'حساسية جلدية';
+    }
+    if (symptoms.any((s) => s.contains('معدة') || s.contains('حموضة') || s.contains('إسهال'))) {
+      return 'اضطراب بالجهاز الهضمي';
+    }
+    if (symptoms.any((s) => s.contains('صداع') || s.contains('دوخة'))) {
+      return 'اضطراب عصبي بسيط';
+    }
+    return 'حالة عامة تحتاج تقييم طبي';
+  }
+
+  static Future<List<DoctorRecommendation>> _recommendDoctors({
+    required List<SpecialtyRecommendation> specialties,
+    required String severity,
+  }) async {
+    if (specialties.isEmpty) return [];
+    final specialtyNames = specialties.map((s) => s.name).toSet();
+    final doctorsQuery = await _firestore
+        .collection('users')
+        .where('accountType', isEqualTo: 'doctor')
+        .where('isVerified', isEqualTo: true)
+        .get();
+
+    final recommendations = <DoctorRecommendation>[];
+    for (final doc in doctorsQuery.docs) {
+      final data = doc.data();
+      final doctorSpecialty = (data['specialtyName'] ?? data['specialty'] ?? '').toString();
+      if (!specialtyNames.contains(doctorSpecialty)) continue;
+      final rating = (data['rating'] as num?)?.toDouble() ?? 0.0;
+      final available = (data['isAvailable'] as bool?) ?? true;
+      final online = (data['isOnline'] as bool?) ?? false;
+      int matchScore = 50;
+      if (rating >= 4.5) matchScore += 25;
+      if (online) matchScore += 15;
+      if (available) matchScore += 10;
+      if (severity == 'high' && online) matchScore += 10;
+      matchScore = matchScore.clamp(0, 100);
+
+      recommendations.add(
+        DoctorRecommendation.fromFirestore(
+          doc,
+          matchPercentage: matchScore,
+          reasons: [
+            'تخصص مناسب للحالة',
+            if (rating >= 4) 'تقييم مرتفع',
+            if (available) 'متاح للحجز',
+            if (online) 'متصل الآن',
+          ],
+        ),
+      );
+    }
+
+    recommendations.sort((a, b) => b.matchPercentage.compareTo(a.matchPercentage));
+    return recommendations.take(5).toList();
   }
 
   /// ✅ الحصول على الإجراءات الفورية
@@ -358,6 +456,7 @@ class AdvancedDiagnosisService {
     HealthProfile profile,
     List<String> symptoms,
     String severity,
+    String probableCondition,
   ) {
     final StringBuffer analysis = StringBuffer();
 
@@ -389,6 +488,8 @@ class AdvancedDiagnosisService {
     analysis.writeln('   $severityLabel');
 
     // الأعراض المكتشفة
+    analysis.writeln('');
+    analysis.writeln('🧠 التشخيص الأكثر احتمالاً: $probableCondition');
     analysis.writeln('');
     analysis.writeln('🔍 الأعراض المكتشفة:');
     for (int i = 0; i < symptoms.length && i < 5; i++) {
@@ -433,6 +534,7 @@ class AdvancedDiagnosisService {
         })
             .toList(),
         'immediateActions': result.immediateActions,
+        'recommendedDoctors': result.recommendedDoctors.map((d) => d.toFirestore()).toList(),
         'analysisDate': FieldValue.serverTimestamp(),
       });
 
@@ -451,6 +553,7 @@ class MedicalAnalysisResult {
   final List<MedicineRecommendation> recommendedMedicines;
   final List<SpecialtyRecommendation> recommendedSpecialties;
   final List<String> immediateActions;
+  final List<DoctorRecommendation> recommendedDoctors;
   final DateTime analysisDate;
   final String detailedAnalysis;
 
@@ -460,6 +563,7 @@ class MedicalAnalysisResult {
     required this.recommendedMedicines,
     required this.recommendedSpecialties,
     required this.immediateActions,
+    required this.recommendedDoctors,
     required this.analysisDate,
     required this.detailedAnalysis,
   });

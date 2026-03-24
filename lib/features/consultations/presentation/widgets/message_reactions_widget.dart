@@ -9,12 +9,14 @@ class MessageReactionsWidget extends StatefulWidget {
   final String consultationId;
   final String messageId;
   final VoidCallback? onReactionAdded;
+  final bool showAddButton;
 
   const MessageReactionsWidget({
     Key? key,
     required this.consultationId,
     required this.messageId,
     this.onReactionAdded,
+    this.showAddButton = true,
   }) : super(key: key);
 
   @override
@@ -106,21 +108,7 @@ class _MessageReactionsWidgetState extends State<MessageReactionsWidget> {
       future: _reactionsFuture,
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          // لا توجد تفاعلات، اعرض زر إضافة تفاعل فقط
-          return GestureDetector(
-            onTap: () => _showReactionPicker(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Text(
-                '😊',
-                style: TextStyle(fontSize: 14),
-              ),
-            ),
-          );
+          return const SizedBox.shrink();
         }
 
         final reactions = snapshot.data!;
@@ -177,20 +165,21 @@ class _MessageReactionsWidgetState extends State<MessageReactionsWidget> {
                 );
               }).toList(),
               // زر إضافة تفاعل جديد
-              GestureDetector(
-                onTap: () => _showReactionPicker(context),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Text(
-                    '😊',
-                    style: TextStyle(fontSize: 14),
+              if (widget.showAddButton)
+                GestureDetector(
+                  onTap: () => _showReactionPicker(context),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      '+',
+                      style: TextStyle(fontSize: 14),
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
         );

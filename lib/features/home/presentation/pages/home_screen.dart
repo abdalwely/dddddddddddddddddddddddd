@@ -303,7 +303,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     onMoodSelected: updateMood,
                   ),
                   UpcomingAppointmentsWidget(appointments: appointments),
-                  UpcomingMedicationsSection(medications: medications),
+                  if (currentUserModel!.isPatient)
+                    UpcomingMedicationsSection(medications: medications),
                   if (currentUserModel!.isPatient) const DoctorsListWidget(),
                   const MedicalTipsWidget(),
                   const MedicalNewsWidget(),
@@ -315,7 +316,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ? const BookAppointmentScreen()
               : const AppointmentsListScreen(),
           const InstantConsultationScreen(),
-          const MedicationsScreen(),
+          currentUserModel!.isPatient
+              ? const MedicationsScreen()
+              : const AppointmentsListScreen(),
           const ProfileScreen(),
         ],
       ),
@@ -339,21 +342,24 @@ class _HomeScreenState extends State<HomeScreen> {
             topLeft: Radius.circular(22),
             topRight: Radius.circular(22),
           ),
-          child: BottomNavigationBar(
+          child: NavigationBar(
             backgroundColor: colorScheme.surface,
-            currentIndex: _currentIndex,
-            onTap: (index) => setState(() => _currentIndex = index),
-            type: BottomNavigationBarType.fixed,
-            selectedItemColor: colorScheme.primary,
-            unselectedItemColor: colorScheme.onSurfaceVariant,
-            showUnselectedLabels: true,
-            elevation: 0,
-            items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'الرئيسية'),
-              BottomNavigationBarItem(icon: Icon(Icons.calendar_month_rounded), label: 'المواعيد'),
-              BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_rounded), label: 'استشارة'),
-              BottomNavigationBarItem(icon: Icon(Icons.medication_liquid_rounded), label: 'الأدوية'),
-              BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'حسابي'),
+            selectedIndex: _currentIndex,
+            onDestinationSelected: (index) => setState(() => _currentIndex = index),
+            indicatorColor: colorScheme.primaryContainer.withOpacity(0.7),
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+            animationDuration: const Duration(milliseconds: 350),
+            destinations: [
+              const NavigationDestination(icon: Icon(Icons.home_rounded), label: 'الرئيسية'),
+              const NavigationDestination(icon: Icon(Icons.calendar_month_rounded), label: 'المواعيد'),
+              const NavigationDestination(icon: Icon(Icons.chat_bubble_rounded), label: 'استشارة'),
+              NavigationDestination(
+                icon: Icon(currentUserModel!.isPatient
+                    ? Icons.medication_liquid_rounded
+                    : Icons.fact_check_rounded),
+                label: currentUserModel!.isPatient ? 'الأدوية' : 'الطلبات',
+              ),
+              const NavigationDestination(icon: Icon(Icons.person_rounded), label: 'حسابي'),
             ],
           ),
         ),

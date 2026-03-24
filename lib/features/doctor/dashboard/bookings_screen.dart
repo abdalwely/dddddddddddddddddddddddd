@@ -18,62 +18,6 @@ class BookingsScreen extends StatefulWidget {
 class _BookingsScreenState extends State<BookingsScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  List<Map<String, dynamic>> bookings = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadBookings();
-  }
-
-  Future<void> _loadBookings() async {
-    final doctorId = _auth.currentUser?.uid;
-    if (doctorId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('يرجى تسجيل الدخول لعرض الحجوزات'),
-          backgroundColor: MedicalTheme.dangerRed,
-        ),
-      );
-      return;
-    }
-
-    try {
-      // جلب جميع المواعيد للطبيب فقط
-      final snap = await _firestore
-          .collection('appointments')
-          .where('doctorId', isEqualTo: doctorId)
-          .get();
-
-      // فلترة وترتيب محلياً
-      final filteredDocs = snap.docs.where((doc) {
-        final status = (doc.data() as Map<String, dynamic>)['status'];
-        return status == 'pending';
-      }).toList();
-
-      // ترتيب حسب التاريخ (الأحدث أولاً)
-      filteredDocs.sort((a, b) {
-        final aCreatedAt = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
-        final bCreatedAt = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
-        return (bCreatedAt?.toDate() ?? DateTime(1970)).compareTo(aCreatedAt?.toDate() ?? DateTime(1970));
-      });
-
-      setState(() {
-        bookings = filteredDocs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          data['id'] = doc.id;
-          return data;
-        }).toList();
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('خطأ في تحميل الحجوزات: $e'),
-          backgroundColor: AppTheme.alertRed,
-        ),
-      );
-    }
-  }
 
   Future<void> _updateBookingStatus(String? bookingId, String status) async {
     if (bookingId == null) {
@@ -91,7 +35,6 @@ class _BookingsScreenState extends State<BookingsScreen> {
         'status': status,
         'updatedAt': Timestamp.now(),
       });
-      await _loadBookings();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -116,22 +59,40 @@ class _BookingsScreenState extends State<BookingsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('الحجوزات الجديدة'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadBookings,
-          ),
-        ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _loadBookings,
-        child: bookings.isEmpty
-            ? const Center(child: Text('لا توجد حجوزات جديدة'))
-            : ListView.builder(
+      body: StreamBuilder<QuerySnapshot>(
+        stream: _firestore
+            .collection('appointments')
+            .where('doctorId', isEqualTo: _auth.currentUser?.uid)
+            .where('status', isEqualTo: 'pending')
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('خطأ في تحميل الحجوزات: ${snapshot.error}'));
+          }
+
+          final bookings = (snapshot.data?.docs ?? []).toList()
+            ..sort((a, b) {
+              final aData = a.data() as Map<String, dynamic>;
+              final bData = b.data() as Map<String, dynamic>;
+              final aCreated = (aData['createdAt'] as Timestamp?)?.toDate() ?? DateTime(1970);
+              final bCreated = (bData['createdAt'] as Timestamp?)?.toDate() ?? DateTime(1970);
+              return bCreated.compareTo(aCreated);
+            });
+          if (bookings.isEmpty) {
+            return const Center(child: Text('لا توجد حجوزات جديدة'));
+          }
+
+          return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: bookings.length,
           itemBuilder: (context, index) {
-            final data = bookings[index];
+            final item = bookings[index];
+            final data = item.data() as Map<String, dynamic>;
+            data['id'] = item.id;
             final patientName = data['userName'] ?? 'مريض';
             final reason = data['reason'] ?? 'سبب غير معروف';
             final time = data['date'] != null
@@ -202,7 +163,8 @@ class _BookingsScreenState extends State<BookingsScreen> {
               ),
             );
           },
-        ),
+        );
+        },
       ),
     );
   }

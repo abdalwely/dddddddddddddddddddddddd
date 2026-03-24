@@ -25,12 +25,11 @@ class _AppointmentsListScreenState extends State<AppointmentsListScreen> {
     final appointmentService = Provider.of<AppointmentService>(context);
     final currentUserId = FirebaseAuth.instance.currentUser!.uid;
     final theme = Theme.of(context);
-    final isDarkMode = theme.brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: isDarkMode? Colors.grey[900]: Colors.white,
-        foregroundColor: Colors.blue,
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.primary,
         elevation: 1,
         title: const Text('جميع المواعيد'),
         actions: [
@@ -120,15 +119,15 @@ class _AppointmentsListScreenState extends State<AppointmentsListScreen> {
                         spacing: 12,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          Icon(Icons.circle, color: _statusColor(appointment.status), size: 14),
+                          Icon(Icons.circle, color: _statusColor(context, appointment.status), size: 14),
                           IconButton(
-                            icon: const Icon(Icons.delete_forever, color: Colors.red),
+                            icon: Icon(Icons.delete_forever, color: theme.colorScheme.error),
                             tooltip: 'إلغاء الموعد',
                             onPressed: _isDeleting
                                 ? null
                                 : () => _confirmDelete(context, appointment.id),
                           ),
-                          const Icon(Icons.chevron_right, color: Colors.grey),
+                          Icon(Icons.chevron_right, color: theme.colorScheme.onSurfaceVariant),
                         ],
                       ),
                       onTap: () {
@@ -252,16 +251,17 @@ class _AppointmentsListScreenState extends State<AppointmentsListScreen> {
     );
   }
 
-  Color _statusColor(String status) {
+  Color _statusColor(BuildContext context, String status) {
+    final colors = Theme.of(context).colorScheme;
     switch (status) {
       case 'approved':
-        return Colors.green;
+        return colors.primary;
       case 'pending':
         return Colors.orange;
       case 'cancelled':
-        return Colors.red;
+        return colors.error;
       default:
-        return Colors.grey;
+        return colors.onSurfaceVariant;
     }
   }
 }

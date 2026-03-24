@@ -41,7 +41,6 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
       final snap = await _firestore
           .collection('appointments')
           .where('doctorId', isEqualTo: doctorId)
-          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(monthStart))
           .get();
 
       int pendingCount = 0;
@@ -49,6 +48,8 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
       int cancelledCount = 0;
 
       for (var doc in snap.docs) {
+        final date = (doc['date'] as Timestamp?)?.toDate();
+        if (date == null || date.isBefore(monthStart)) continue;
         final status = doc['status'] as String? ?? 'pending';
         if (status == 'pending') pendingCount++;
         if (status == 'attended') attendedCount++;
