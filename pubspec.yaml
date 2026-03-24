@@ -79,6 +79,8 @@ dependencies:
   flutter_rating_bar: any
   timezone: any
   visibility_detector: any
+  record: ^5.2.1
+  audioplayers: ^6.1.0
 
   #  zego_express_engine: 3.23.0
   #  zego_uikit: 2.22.2
