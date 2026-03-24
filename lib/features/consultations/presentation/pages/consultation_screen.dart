@@ -8,9 +8,12 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
+import 'package:record/record.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'dart:io';
 import '../../../../core/config/medical_theme.dart';
 import '../widgets/message_reactions_widget.dart';
+import '../../services/message_reactions_service.dart';
 
 class ConsultationScreen extends StatefulWidget {
   final String consultationId;
@@ -72,6 +75,13 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
   bool _shouldScrollToBottom = true;
   bool _isInitialLoad = true;
   bool _isFirstBuild = true;
+  final AudioRecorder _audioRecorder = AudioRecorder();
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  bool _isRecording = false;
+  String? _recordingPath;
+  String? _playingMessageId;
+  Duration _audioDuration = Duration.zero;
+  Duration _audioPosition = Duration.zero;
 
   @override
   void initState() {
@@ -96,7 +106,30 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
     _markDeliveredMessages();
     _setupRealTimeUpdates();
     _scrollController.addListener(_scrollListener);
+    _configureAudioPlayer();
     _logSuccess('✅ تم تهيئة المحادثة');
+  }
+
+  void _configureAudioPlayer() {
+    _audioPlayer.onPlayerStateChanged.listen((state) {
+      if (!mounted) return;
+      if (state == PlayerState.stopped || state == PlayerState.completed) {
+        setState(() {
+          _playingMessageId = null;
+          _audioPosition = Duration.zero;
+        });
+      }
+    });
+    _audioPlayer.onDurationChanged.listen((value) {
+      if (mounted) {
+        setState(() => _audioDuration = value);
+      }
+    });
+    _audioPlayer.onPositionChanged.listen((value) {
+      if (mounted) {
+        setState(() => _audioPosition = value);
+      }
+    });
   }
 
   void _scrollListener() {
@@ -451,6 +484,59 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
     } catch (e) {
       setState(() => isSending = false);
       _showErrorSnackbar('فشل في إرسال الرسالة');
+    }
+  }
+
+  Future<void> _startRecording() async {
+    try {
+      if (await _audioRecorder.hasPermission()) {
+        final path = '/tmp/${DateTime.now().millisecondsSinceEpoch}.m4a';
+        await _audioRecorder.start(const RecordConfig(), path: path);
+        if (mounted) {
+          setState(() {
+            _isRecording = true;
+            _recordingPath = path;
+          });
+        }
+      } else {
+        _showErrorSnackbar('يلزم إذن الميكروفون لتسجيل الرسائل الصوتية');
+      }
+    } catch (_) {
+      _showErrorSnackbar('تعذر بدء التسجيل الصوتي');
+    }
+  }
+
+  Future<void> _stopAndSendRecording() async {
+    try {
+      final path = await _audioRecorder.stop();
+      if (!mounted) return;
+      setState(() => _isRecording = false);
+      if (path == null) return;
+      selectedMedia = File(path);
+      mediaType = 'audio';
+      fileName = 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await _sendMessage();
+    } catch (_) {
+      if (mounted) setState(() => _isRecording = false);
+      _showErrorSnackbar('تعذر إرسال التسجيل الصوتي');
+    }
+  }
+
+  Future<void> _playOrPauseAudio({
+    required String messageId,
+    required String audioUrl,
+  }) async {
+    try {
+      if (_playingMessageId == messageId) {
+        await _audioPlayer.pause();
+        setState(() => _playingMessageId = null);
+        return;
+      }
+      await _audioPlayer.stop();
+      await _audioPlayer.play(UrlSource(audioUrl));
+      setState(() => _playingMessageId = messageId);
+    } catch (_) {
+      _showErrorSnackbar('تعذر تشغيل الرسالة الصوتية');
     }
   }
   Future<String?> _uploadFile() async {
@@ -1141,7 +1227,7 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
                           transitionBuilder: (child, animation) {
                             return ScaleTransition(scale: animation, child: child);
                           },
-                          child: isSending
+                            child: isSending
                               ? Padding(
                             padding: const EdgeInsets.all(8.0),
                             child: SizedBox(
@@ -1159,15 +1245,17 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
                             color: Colors.transparent,
                             child: InkWell(
                               key: const ValueKey("send_button"),
-                              onTap: _messageController.text.isEmpty
+                              onTap: (_messageController.text.isEmpty && selectedMedia == null)
                                   ? null
                                   : _sendMessage,
                               borderRadius: BorderRadius.circular(20),
                               child: Padding(
                                 padding: const EdgeInsets.all(8.0),
                                 child: Icon(
-                                  Icons.send_rounded,
-                                  color: _messageController.text.isEmpty
+                                  (_messageController.text.isEmpty && selectedMedia == null)
+                                      ? Icons.mic_rounded
+                                      : Icons.send_rounded,
+                                  color: (_messageController.text.isEmpty && selectedMedia == null)
                                       ? theme.disabledColor
                                       : theme.primaryColor,
                                   size: 20,
@@ -1178,6 +1266,18 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
                           ),
                         ),
                       ),
+                      if (_messageController.text.isEmpty && selectedMedia == null)
+                        GestureDetector(
+                          onLongPressStart: (_) => _startRecording(),
+                          onLongPressEnd: (_) => _stopAndSendRecording(),
+                          child: Container(
+                            margin: const EdgeInsetsDirectional.only(start: 4),
+                            child: Icon(
+                              _isRecording ? Icons.mic : Icons.mic_none_rounded,
+                              color: _isRecording ? Colors.red : theme.primaryColor,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -1213,7 +1313,7 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
     }
 
     Widget content;
-    if ((type == 'image' || type == 'video' || type == 'file') && fileUrl != null) {
+    if ((type == 'image' || type == 'video' || type == 'file' || type == 'audio') && fileUrl != null) {
       List<Widget> contentWidgets = [];
 
       if (text.isNotEmpty) {
@@ -1321,6 +1421,57 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
             ),
           ),
         );
+      } else if (type == 'audio') {
+        contentWidgets.add(
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: isDarkMode ? Colors.grey[850] : Colors.grey[100],
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      onPressed: () => _playOrPauseAudio(
+                        messageId: msgId,
+                        audioUrl: fileUrl,
+                      ),
+                      icon: Icon(
+                        _playingMessageId == msgId
+                            ? Icons.pause_circle_filled_rounded
+                            : Icons.play_circle_fill_rounded,
+                        color: theme.primaryColor,
+                        size: 30,
+                      ),
+                    ),
+                    SizedBox(
+                      width: 140,
+                      child: Slider(
+                        value: (_playingMessageId == msgId && _audioDuration.inMilliseconds > 0)
+                            ? _audioPosition.inMilliseconds
+                                .clamp(0, _audioDuration.inMilliseconds)
+                                .toDouble()
+                            : 0,
+                        max: _audioDuration.inMilliseconds > 0
+                            ? _audioDuration.inMilliseconds.toDouble()
+                            : 1,
+                        onChanged: (_playingMessageId == msgId)
+                            ? (value) => _audioPlayer.seek(
+                                  Duration(milliseconds: value.toInt()),
+                                )
+                            : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
       }
 
       content = Column(
@@ -1393,6 +1544,11 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
               : const SizedBox.shrink();
 
           return GestureDetector(
+            onDoubleTap: () => MessageReactionsService.toggleReaction(
+              consultationId: widget.consultationId,
+              messageId: msgId,
+              emoji: '❤️',
+            ),
             onLongPress: () => _handleLongPress(doc),
             onHorizontalDragEnd: (details) {
               if (details.primaryVelocity != null && details.primaryVelocity! > 0) {
@@ -1495,6 +1651,7 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
                             child: MessageReactionsWidget(
                               consultationId: widget.consultationId,
                               messageId: msgId,
+                              showAddButton: false,
                             ),
                           ),
                         ],
@@ -2090,6 +2247,8 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
+    _audioRecorder.dispose();
+    _audioPlayer.dispose();
     selectedMedia?.delete();
     super.dispose();
   }

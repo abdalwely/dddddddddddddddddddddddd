@@ -285,12 +285,10 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
         _selectedWorkplace != null &&
         _selectedPayment != null;
     final theme = Theme.of(context);
-    final isDarkMode = theme.brightness == Brightness.dark;
-
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: isDarkMode? Colors.grey[900]: Colors.white,
-        foregroundColor: Colors.blue,
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.primary,
         elevation: 2,
         title: const Text('حجز موعد جديد'),
       ),
