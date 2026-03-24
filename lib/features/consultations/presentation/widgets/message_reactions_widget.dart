@@ -24,17 +24,6 @@ class MessageReactionsWidget extends StatefulWidget {
 }
 
 class _MessageReactionsWidgetState extends State<MessageReactionsWidget> {
-  late Future<List<MessageReaction>> _reactionsFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _reactionsFuture = MessageReactionsService.getReactions(
-      consultationId: widget.consultationId,
-      messageId: widget.messageId,
-    );
-  }
-
   /// عرض قائمة التفاعلات للاختيار
   void _showReactionPicker(BuildContext context) {
     showDialog(
@@ -83,14 +72,6 @@ class _MessageReactionsWidgetState extends State<MessageReactionsWidget> {
         emoji: emoji,
       );
 
-      // تحديث الواجهة
-      setState(() {
-        _reactionsFuture = MessageReactionsService.getReactions(
-          consultationId: widget.consultationId,
-          messageId: widget.messageId,
-        );
-      });
-
       widget.onReactionAdded?.call();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -104,14 +85,27 @@ class _MessageReactionsWidgetState extends State<MessageReactionsWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<MessageReaction>>(
-      future: _reactionsFuture,
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('consultations')
+          .doc(widget.consultationId)
+          .collection('messages')
+          .doc(widget.messageId)
+          .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+        if (!snapshot.hasData || !snapshot.data!.exists) {
           return const SizedBox.shrink();
         }
 
-        final reactions = snapshot.data!;
+        final data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
+        final rawReactions = data['reactions'] as Map<String, dynamic>? ?? {};
+        final reactions = rawReactions.entries
+            .map((entry) => MessageReaction.fromMap(entry.value as Map<String, dynamic>))
+            .toList();
+
+        if (reactions.isEmpty) {
+          return const SizedBox.shrink();
+        }
         final currentUserId = FirebaseAuth.instance.currentUser?.uid;
 
         return SingleChildScrollView(

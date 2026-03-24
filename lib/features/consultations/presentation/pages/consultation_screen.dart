@@ -10,10 +10,12 @@ import 'package:visibility_detector/visibility_detector.dart';
 import 'package:zego_uikit_prebuilt_call/zego_uikit_prebuilt_call.dart';
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import '../../../../core/config/medical_theme.dart';
 import '../widgets/message_reactions_widget.dart';
 import '../../services/message_reactions_service.dart';
+import '../../models/message_reaction_model.dart';
 
 class ConsultationScreen extends StatefulWidget {
   final String consultationId;
@@ -489,7 +491,8 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
   Future<void> _startRecording() async {
     try {
       if (await _audioRecorder.hasPermission()) {
-        final path = '/tmp/${DateTime.now().millisecondsSinceEpoch}.m4a';
+        final tempDir = await getTemporaryDirectory();
+        final path = '${tempDir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
         await _audioRecorder.start(const RecordConfig(), path: path);
         if (mounted) {
           setState(() {
@@ -532,7 +535,7 @@ class _ConsultationScreenState extends State<ConsultationScreen> {
     final selected = await showModalBottomSheet<String>(
       context: context,
       builder: (_) {
-        final emojis = ['❤️', '👍', '😂', '😮', '😢', '👏'];
+        final emojis = ReactionEmojis.available;
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(16),
